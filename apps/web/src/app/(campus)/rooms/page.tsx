@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { AccessStateBanner } from "@/components/AccessStateBanner";
 import { AppShell } from "@/components/AppShell";
@@ -11,16 +11,22 @@ import { RoomCreateModal } from "@/components/RoomCreateModal";
 import { RoomList } from "@/components/RoomList";
 import { useSession } from "@/hooks/useSession";
 import { api } from "@/lib/api/client";
+import type { Room } from "@/lib/types";
 
 export default function RoomsPage() {
   const { session } = useSession();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "public" | "private" | "mine">("all");
   const [modal, setModal] = useState(false);
+  const roomsQueryKey = useMemo(
+    () => ["rooms", session?.token] as const,
+    [session?.token],
+  );
 
   const { data: rooms, isLoading, refetch } = useQuery({
     enabled: !!session,
-    queryKey: ["rooms", session?.token],
+    queryKey: roomsQueryKey,
     queryFn: () => api.rooms.list(),
     refetchInterval: 5000,
     refetchOnReconnect: true,
@@ -39,6 +45,13 @@ export default function RoomsPage() {
   }, [rooms, query, filter]);
 
   const mine = (rooms ?? []).filter((r) => r.createdByMe);
+  const handleRoomCreated = (room: Room) => {
+    queryClient.setQueryData<Room[]>(roomsQueryKey, (current) => {
+      const existing = current ?? [];
+      return [room, ...existing.filter((item) => item.id !== room.id)];
+    });
+    void refetch();
+  };
 
   return (
     <AppShell maxWidth="max-w-6xl">
@@ -126,7 +139,11 @@ export default function RoomsPage() {
         </p>
       </section>
 
-      <RoomCreateModal open={modal} onClose={() => setModal(false)} onCreated={() => refetch()} />
+      <RoomCreateModal
+        open={modal}
+        onClose={() => setModal(false)}
+        onCreated={handleRoomCreated}
+      />
     </AppShell>
   );
 }

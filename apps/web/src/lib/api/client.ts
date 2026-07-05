@@ -85,6 +85,8 @@ async function withFallback<T>(
 }
 
 function shouldUseMockFallback(error: unknown): boolean {
+  if (!env.allowMockFallback) return false;
+
   const code = trpcErrorCode(error);
   if (!code) return true;
   return false;

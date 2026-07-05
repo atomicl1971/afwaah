@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Lock, Globe } from "lucide-react";
 import { api } from "@/lib/api/client";
+import type { Room } from "@/lib/types";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -11,7 +12,7 @@ export function RoomCreateModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (room: Room) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -33,10 +34,16 @@ export function RoomCreateModal({
     if (!name.trim() || atLimit) return;
     setSubmitting(true);
     try {
-      await api.rooms.create({ name: name.trim(), description: description.trim() || undefined, visibility });
+      const room = await api.rooms.create({
+        description: description.trim() || undefined,
+        name: name.trim(),
+        visibility,
+      });
       toast.success("Room created");
-      setName(""); setDescription(""); setVisibility("public");
-      onCreated();
+      setName("");
+      setDescription("");
+      setVisibility("public");
+      onCreated(room);
       onClose();
     } catch {
       toast.error("Could not create room");
