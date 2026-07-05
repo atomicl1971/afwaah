@@ -22,6 +22,7 @@ export function createTrpcRouter(env: ApiEnv, clients: ApiClients): Router {
         return createContext({
           adminCookieName: env.ADMIN_COOKIE_NAME,
           adminSessionTtlSeconds: env.ADMIN_SESSION_TTL_SECONDS,
+          allowIpLocationFallback: env.LOCATION_IP_FALLBACK_ENABLED,
           db: clients.db,
           redis: clients.redis,
           req: { headers: req.headers },

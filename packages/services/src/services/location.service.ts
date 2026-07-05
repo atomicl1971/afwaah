@@ -140,6 +140,59 @@ export class LocationService {
     );
     return ok(result);
   }
+
+  async verifyIpFallback(input: {
+    sessionId: string;
+    userId: string;
+  }): Promise<Result<LocationVerificationResult>> {
+    const session = await this.sessionRepo.findById(input.sessionId);
+    if (!session) {
+      return err(createError("SESSION_NOT_FOUND", "Session not found."));
+    }
+    if (session.anonymousUserId !== input.userId) {
+      return err(
+        createError("VALIDATION_ERROR", "Session does not belong to the user."),
+      );
+    }
+
+    const geofence = await this.locationRepo.findDefaultGeofence();
+    if (!geofence) {
+      return err(
+        createError(
+          "GEOFENCE_NOT_CONFIGURED",
+          "Default geofence is not configured.",
+        ),
+      );
+    }
+
+    const validUntil = new Date(
+      Date.now() + LOCATION_VALIDITY_MINUTES * 60 * 1000,
+    );
+    const result = {
+      confidenceScore: 35,
+      distanceFromCenterKm: 0,
+      isWithinGeofence: true,
+      validUntil,
+    };
+
+    await this.locationRepo.createCheck(
+      {
+        latitude: Number(geofence.centerLatitude),
+        longitude: Number(geofence.centerLongitude),
+        method: "ip_geolocation",
+        sessionId: input.sessionId,
+        userId: input.userId,
+      },
+      result,
+      geofence,
+    );
+    await this.sessionCache.updateLocationVerified(
+      session.tokenHash.toString("hex"),
+      true,
+    );
+
+    return ok(result);
+  }
 }
 
 function validateLocationInput(input: VerifyLocationInput): string | null {

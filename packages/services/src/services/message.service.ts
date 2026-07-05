@@ -45,6 +45,12 @@ const MESSAGE_SHORT_TEXT_LIMIT = {
 } as const;
 
 const SHORT_TEXT_MAX_LENGTH = 12;
+const MESSAGE_SEND_SLOW_LOG_MS = 1000;
+
+interface MessageSendTiming {
+  ms: number;
+  stage: string;
+}
 
 export class MessageService {
   private readonly messageRepo: MessageRepository;
@@ -252,6 +258,9 @@ export class MessageService {
     displayColor: string,
     input: SendMessageInput,
   ): Promise<Result<MessageAck>> {
+    const sendStartedAt = Date.now();
+    let stageStartedAt = sendStartedAt;
+    const timings: MessageSendTiming[] = [];
     const body = input.body.trim();
     if (!body)
       return err(createError("MESSAGE_EMPTY", "Message cannot be empty."));
@@ -272,14 +281,19 @@ export class MessageService {
     }
 
     const room = await this.roomRepo.findById(input.roomId);
+    stageStartedAt = markTiming(timings, "room_lookup", stageStartedAt);
     if (!room) return err(createError("ROOM_NOT_FOUND", "Room not found."));
     if (room.status !== "active")
       return err(createError("ROOM_LOCKED", "Room is not active."));
+    if (room.expiresAt && room.expiresAt <= new Date()) {
+      return err(createError("ROOM_EXPIRED", "Room has expired."));
+    }
 
     const existing = await this.messageRepo.findByClientMessageId(
       input.roomId,
       input.clientMessageId,
     );
+    stageStartedAt = markTiming(timings, "dedupe_lookup", stageStartedAt);
     if (existing) {
       if (
         existing.anonymousUserId !== userId ||
@@ -299,10 +313,12 @@ export class MessageService {
     }
 
     const writeAccess = await this.writeGuard.requireWriteAccess({
+      roomAlreadyValidated: true,
       roomId: input.roomId,
       sessionId,
       userId,
     });
+    stageStartedAt = markTiming(timings, "write_guard", stageStartedAt);
     if (!writeAccess.ok) return err(writeAccess.error);
 
     const rateLimit = await this.enforceMessageRateLimits(
@@ -310,12 +326,14 @@ export class MessageService {
       input.roomId,
       body,
     );
+    stageStartedAt = markTiming(timings, "rate_limits", stageStartedAt);
     if (!rateLimit.ok) return err(rateLimit.error);
 
     const participant = await this.roomRepo.getParticipant(
       input.roomId,
       userId,
     );
+    stageStartedAt = markTiming(timings, "participant_lookup", stageStartedAt);
     if (!participant || participant.status !== "active") {
       return err(
         createError("NOT_ROOM_PARTICIPANT", "Not a room participant."),
@@ -326,6 +344,7 @@ export class MessageService {
       const replyTarget = await this.messageRepo.findById(
         input.replyToMessageId,
       );
+      stageStartedAt = markTiming(timings, "reply_lookup", stageStartedAt);
       if (!replyTarget || replyTarget.roomId !== input.roomId) {
         return err(
           createError("INVALID_REPLY_TARGET", "Invalid reply target."),
@@ -343,15 +362,22 @@ export class MessageService {
         body,
       },
     );
-    await this.roomRepo.updateParticipantLastMessage(input.roomId, userId);
-    await this.roomCache.pushRecentMessage(
-      input.roomId,
-      JSON.stringify(mapMessage(message)),
-    );
+    stageStartedAt = markTiming(timings, "message_insert", stageStartedAt);
+    const mappedMessage = mapMessage(message);
+    await Promise.all([
+      this.roomRepo.updateParticipantLastMessage(input.roomId, userId),
+      this.roomCache.pushRecentMessage(
+        input.roomId,
+        JSON.stringify(mappedMessage),
+      ),
+    ]);
+    markTiming(timings, "post_insert_updates", stageStartedAt);
+    logSlowMessageSend(input.roomId, message.id, sendStartedAt, timings);
 
     return ok({
       clientMessageId: message.clientMessageId,
       createdAt: message.createdAt,
+      message: mappedMessage,
       messageId: message.id,
       wasCreated: true,
     });
@@ -460,6 +486,33 @@ function rateLimited(
       retryAfterSeconds,
     }),
   );
+}
+
+function markTiming(
+  timings: MessageSendTiming[],
+  stage: string,
+  startedAt: number,
+): number {
+  const now = Date.now();
+  timings.push({ ms: now - startedAt, stage });
+  return now;
+}
+
+function logSlowMessageSend(
+  roomId: string,
+  messageId: string,
+  startedAt: number,
+  timings: MessageSendTiming[],
+): void {
+  const totalMs = Date.now() - startedAt;
+  if (totalMs < MESSAGE_SEND_SLOW_LOG_MS) return;
+
+  console.warn("Slow message send", {
+    messageId,
+    roomId,
+    stages: timings,
+    totalMs,
+  });
 }
 
 function normalizeMessageBody(body: string): string {

@@ -73,19 +73,11 @@ export function registerMessageHandlers(
         return;
       }
 
-      const message = await messageService.getMessageById(
-        result.value.messageId,
-      );
-      if (!message.ok) {
-        respondOrEmit<MessageSendResponse>(socket, callback, {
-          error: message.error.message,
-          success: false,
-        });
-        return;
-      }
-
-      if (result.value.wasCreated) {
-        io.to(input.data.roomId).emit("message:new", mapMessage(message.value));
+      if (result.value.wasCreated && result.value.message) {
+        io.to(input.data.roomId).emit(
+          "message:new",
+          mapMessage(result.value.message),
+        );
       }
 
       respondOrEmit<MessageSendResponse>(socket, callback, {

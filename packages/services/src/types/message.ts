@@ -12,6 +12,7 @@ export interface SendMessageInput {
 export interface MessageAck {
   clientMessageId: string;
   createdAt: Date;
+  message?: MessageData;
   messageId: string;
   wasCreated: boolean;
 }

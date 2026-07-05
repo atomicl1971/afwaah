@@ -20,6 +20,7 @@ export class WriteGuardService {
   }
 
   async requireWriteAccess(input: {
+    roomAlreadyValidated?: boolean;
     roomId?: string;
     sessionId: string;
     userId: string;
@@ -31,11 +32,12 @@ export class WriteGuardService {
   }
 
   async requireInteractionAccess(input: {
+    roomAlreadyValidated?: boolean;
     roomId?: string;
     sessionId: string;
     userId: string;
   }): Promise<Result<void>> {
-    if (input.roomId) {
+    if (input.roomId && !input.roomAlreadyValidated) {
       const roomAccess = await this.requireActiveRoom(input.roomId);
       if (!roomAccess.ok) return err(roomAccess.error);
     }

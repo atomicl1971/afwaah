@@ -88,6 +88,15 @@ export class RateLimitCache {
       await this.redis.zrem(key, member);
     }
 
+    if (allowed) {
+      return {
+        allowed,
+        remaining: Math.max(0, max - currentCount - 1),
+        resetAt: new Date(now + windowMs),
+        retryAfterSeconds: null,
+      };
+    }
+
     const oldest = await this.redis.zrange(key, 0, 0, "WITHSCORES");
     const resetAt =
       oldest.length >= 2
@@ -96,11 +105,12 @@ export class RateLimitCache {
 
     return {
       allowed,
-      remaining: Math.max(0, max - currentCount - (allowed ? 1 : 0)),
+      remaining: 0,
       resetAt,
-      retryAfterSeconds: allowed
-        ? null
-        : Math.max(1, Math.ceil((resetAt.getTime() - now) / 1000)),
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil((resetAt.getTime() - now) / 1000),
+      ),
     };
   }
 }

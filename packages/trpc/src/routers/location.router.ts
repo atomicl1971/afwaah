@@ -1,4 +1,5 @@
 import { LocationService } from "@campus-chat/services/services";
+import { TRPCError } from "@trpc/server";
 
 import { handleServiceResult } from "../errors";
 import {
@@ -49,6 +50,25 @@ export const locationRouter = router({
       const locationService = new LocationService(ctx.db, ctx.redis);
       const result = await locationService.verifyLocation({
         ...input,
+        sessionId: ctx.session.sessionId,
+        userId: ctx.session.userId,
+      });
+
+      return handleServiceResult(result);
+    }),
+
+  verifyIpFallback: sessionProcedure
+    .output(verifyLocationOutputSchema)
+    .mutation(async ({ ctx }) => {
+      if (!ctx.allowIpLocationFallback) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Fast desktop location fallback is not enabled.",
+        });
+      }
+
+      const locationService = new LocationService(ctx.db, ctx.redis);
+      const result = await locationService.verifyIpFallback({
         sessionId: ctx.session.sessionId,
         userId: ctx.session.userId,
       });

@@ -16,6 +16,7 @@ const envSchema = z.object({
     .url()
     .default("postgres://postgres:postgres@127.0.0.1:5433/campus_chat"),
   HOST: z.string().min(1).default("0.0.0.0"),
+  LOCATION_IP_FALLBACK_ENABLED: booleanStringSchema.default("false"),
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),

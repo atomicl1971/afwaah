@@ -25,18 +25,21 @@ export function MessageItem({
   const [actionsOpen, setActionsOpen] = useState(false);
 
   const react = (emoji: string) => {
+    if (message.pending) return;
     setActionsOpen(false);
     setMenuOpen(false);
     setReactorOpen(false);
     onReact?.(message.id, emoji);
   };
   const report = () => {
+    if (message.pending) return;
     setActionsOpen(false);
     setReactorOpen(false);
     setMenuOpen(false);
     onReport?.(message);
   };
   const remove = () => {
+    if (message.pending) return;
     setActionsOpen(false);
     setReactorOpen(false);
     setMenuOpen(false);
@@ -72,6 +75,7 @@ export function MessageItem({
   return (
     <div
       onPointerDown={(event) => {
+        if (message.pending) return;
         const target = event.target as HTMLElement;
         if (target.closest("button,a,input,textarea")) return;
         setActionsOpen(true);
@@ -79,7 +83,8 @@ export function MessageItem({
       className={
         "group relative flex gap-3 px-4 animate-msg-in " +
         (sameAuthor ? "py-0.5 " : "pt-3 pb-0.5 ") +
-        (isMine ? "flex-row-reverse" : "")
+        (isMine ? "flex-row-reverse " : "") +
+        (message.pending ? "opacity-70 " : "")
       }
     >
       {sameAuthor ? avatarSpacer : avatar}
@@ -134,40 +139,42 @@ export function MessageItem({
         )}
       </div>
 
-      <div
-        className={
-          "absolute top-1 flex items-center gap-0.5 rounded-md border border-border bg-popover px-0.5 py-0.5 shadow-sm transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 " +
-          (showActions ? "pointer-events-auto opacity-100 " : "pointer-events-none opacity-0 ") +
-          (isMine ? "left-3" : "right-3")
-        }
-      >
-        <button
-          type="button"
-          onClick={() => {
-            setActionsOpen(true);
-            setMenuOpen(false);
-            setReactorOpen((v) => !v);
-          }}
-          className="inline-flex h-8 w-8 touch-manipulation items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="react"
-          aria-expanded={reactorOpen}
+      {!message.pending && (
+        <div
+          className={
+            "absolute top-1 flex items-center gap-0.5 rounded-md border border-border bg-popover px-0.5 py-0.5 shadow-sm transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 " +
+            (showActions ? "pointer-events-auto opacity-100 " : "pointer-events-none opacity-0 ") +
+            (isMine ? "left-3" : "right-3")
+          }
         >
-          <Smile className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setActionsOpen(true);
-            setReactorOpen(false);
-            setMenuOpen((v) => !v);
-          }}
-          className="inline-flex h-8 w-8 touch-manipulation items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="more"
-          aria-expanded={menuOpen}
-        >
-          <MoreHorizontal className="h-3.5 w-3.5" />
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => {
+              setActionsOpen(true);
+              setMenuOpen(false);
+              setReactorOpen((v) => !v);
+            }}
+            className="inline-flex h-8 w-8 touch-manipulation items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label="react"
+            aria-expanded={reactorOpen}
+          >
+            <Smile className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActionsOpen(true);
+              setReactorOpen(false);
+              setMenuOpen((v) => !v);
+            }}
+            className="inline-flex h-8 w-8 touch-manipulation items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label="more"
+            aria-expanded={menuOpen}
+          >
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {reactorOpen && (
         <div

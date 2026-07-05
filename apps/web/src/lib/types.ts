@@ -63,6 +63,7 @@ export interface Message {
   myReactions: string[];
   deleted?: boolean;
   isMine?: boolean;
+  pending?: boolean;
 }
 
 export interface MessageReactionUpdate {

@@ -13,6 +13,8 @@ services:
         value: production
       - key: HOST
         value: 0.0.0.0
+      - key: LOCATION_IP_FALLBACK_ENABLED
+        value: "true"
       - key: TRUST_PROXY
         value: "true"
       - key: CORS_ORIGINS

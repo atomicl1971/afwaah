@@ -476,6 +476,26 @@ export const api = {
       );
     },
 
+    async verifyLocationByIp(): Promise<
+      { kind: "allowed"; validUntil?: string } | { kind: "denied" }
+    > {
+      return withFallback(
+        async () => {
+          const result = await trpc.location.verifyIpFallback.mutate();
+          return result.isWithinGeofence
+            ? { kind: "allowed", validUntil: toIso(result.validUntil) }
+            : { kind: "denied" };
+        },
+        async () => {
+          await delay(250);
+          return {
+            kind: "allowed",
+            validUntil: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          };
+        },
+      );
+    },
+
     async checkLocationStatus(): Promise<AnonSession["writeAccess"]> {
       return withFallback(
         async () => mapLocationStatus(await trpc.location.checkStatus.query()),

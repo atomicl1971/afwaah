@@ -25,6 +25,7 @@ export interface CreateContextOptions {
   req: {
     headers: HeaderSource;
   };
+  allowIpLocationFallback?: boolean;
   sessionCookieName?: string;
   verifyAdminPassword?: PasswordVerifier;
 }
@@ -33,6 +34,7 @@ export interface BaseContext {
   adminCookieName: string;
   adminSessionTtlSeconds: number;
   adminToken: string | null;
+  allowIpLocationFallback: boolean;
   db: DrizzleClient;
   ipAddress: string;
   redis: RedisClient;
@@ -75,6 +77,7 @@ export function createContext(opts: CreateContextOptions): Context {
     adminToken:
       readHeader(opts.req.headers, "x-admin-token") ??
       readCookie(cookieHeader, adminCookieName),
+    allowIpLocationFallback: opts.allowIpLocationFallback ?? false,
     db: opts.db,
     ipAddress:
       firstForwardedIp(readHeader(opts.req.headers, "x-forwarded-for")) ??

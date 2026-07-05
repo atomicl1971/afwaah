@@ -190,6 +190,23 @@ export function ChatRoom({
       return;
     }
 
+    const optimisticId = createOptimisticMessageId();
+    const optimisticCreatedAt = new Date().toISOString();
+    const optimisticMessage: Message = {
+      content,
+      createdAt: optimisticCreatedAt,
+      displayColor: session.displayColor,
+      displayName: session.displayName,
+      id: optimisticId,
+      isMine: true,
+      myReactions: [],
+      pending: true,
+      reactions: {},
+      roomId: room.id,
+      userId: session.userId,
+    };
+    setMessages((prev) => [...prev, optimisticMessage]);
+
     try {
       const sent = channelRef.current
         ? await channelRef.current.sendMessage(content)
@@ -199,26 +216,35 @@ export function ChatRoom({
             messageId: `local_${Math.random().toString(36).slice(2, 8)}`,
           });
 
-      setMessages((prev) =>
-        prev.some((message) => message.id === sent.messageId)
-          ? prev
-          : [
-              ...prev,
-              {
-                content,
+      setMessages((prev) => {
+        const withoutOptimistic = prev.filter(
+          (message) => message.id !== optimisticId,
+        );
+        if (
+          withoutOptimistic.some((message) => message.id === sent.messageId)
+        ) {
+          return withoutOptimistic.map((message) =>
+            message.id === sent.messageId
+              ? { ...message, isMine: true, pending: false }
+              : message,
+          );
+        }
+
+        return prev.map((message) =>
+          message.id === optimisticId
+            ? {
+                ...message,
                 createdAt: sent.createdAt,
-                displayColor: session.displayColor,
-                displayName: session.displayName,
                 id: sent.messageId,
-                isMine: true,
-                myReactions: [],
-                reactions: {},
-                roomId: room.id,
-                userId: session.userId,
-              },
-            ],
-      );
+                pending: false,
+              }
+            : message,
+        );
+      });
     } catch (error) {
+      setMessages((prev) =>
+        prev.filter((message) => message.id !== optimisticId),
+      );
       toast.error(errorMessage(error));
       throw error;
     }
@@ -432,4 +458,14 @@ export function ChatRoom({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to send message.";
+}
+
+function createOptimisticMessageId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `pending_${crypto.randomUUID()}`;
+  }
+
+  return `pending_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2)}`;
 }

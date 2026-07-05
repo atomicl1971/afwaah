@@ -9,9 +9,11 @@ import { AppShell } from "@/components/AppShell";
 import { useSession } from "@/hooks/useSession";
 import { api } from "@/lib/api/client";
 import {
-  getReliableBrowserPosition,
+  getPosition,
   isGeolocationPositionError,
+  LOCATION_CACHE_MAX_AGE_MS,
   LocationVerificationError,
+  QUICK_GEOLOCATION_TIMEOUT_MS,
   VERIFY_REQUEST_TIMEOUT_MS,
   withTimeout,
 } from "@/lib/location";
@@ -53,16 +55,7 @@ export default function VerifyLocationPage() {
         );
       }
 
-      const position = await getReliableBrowserPosition();
-      const res = await withTimeout(
-        api.session.verifyLocation({
-          accuracyMeters: position.coords.accuracy,
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        }),
-        VERIFY_REQUEST_TIMEOUT_MS,
-        "Location verification took too long. The server may still be waking up.",
-      );
+      const res = await verifyFast();
 
       setErrorMessage(null);
       setState(
@@ -184,6 +177,46 @@ export default function VerifyLocationPage() {
       </div>
     </AppShell>
   );
+}
+
+async function verifyFast(): Promise<
+  | { kind: "allowed"; validUntil?: string }
+  | { kind: "off_campus" }
+  | { kind: "denied" }
+> {
+  try {
+    const position = await getPosition(
+      {
+        enableHighAccuracy: false,
+        maximumAge: LOCATION_CACHE_MAX_AGE_MS,
+        timeout: QUICK_GEOLOCATION_TIMEOUT_MS,
+      },
+      QUICK_GEOLOCATION_TIMEOUT_MS + 500,
+    );
+
+    return withTimeout(
+      api.session.verifyLocation({
+        accuracyMeters: position.coords.accuracy,
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      }),
+      VERIFY_REQUEST_TIMEOUT_MS,
+      "Location verification took too long. The server may still be waking up.",
+    );
+  } catch (error) {
+    if (
+      isGeolocationPositionError(error) &&
+      error.code === error.PERMISSION_DENIED
+    ) {
+      throw error;
+    }
+
+    return withTimeout(
+      api.session.verifyLocationByIp(),
+      VERIFY_REQUEST_TIMEOUT_MS,
+      "Fast desktop location fallback took too long. The server may still be waking up.",
+    );
+  }
 }
 
 function locationFailure(error: unknown): {
