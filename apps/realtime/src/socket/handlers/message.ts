@@ -3,6 +3,8 @@ import type { MessageData } from "@campus-chat/services/types";
 
 import type { RealtimeClients } from "../../clients";
 import type {
+  MessageDeleteResponse,
+  MessageDeletedPayload,
   MessageNewPayload,
   MessageReactionResponse,
   MessageReactionUpdatePayload,
@@ -10,7 +12,9 @@ import type {
 } from "../../types/events";
 import type { RealtimeServer, RealtimeSocket } from "../../types/socket";
 import { respondOrEmit } from "../errors";
+import type { PresenceManager } from "../presence";
 import {
+  messageDeletePayloadSchema,
   messageReactionPayloadSchema,
   messageSendPayloadSchema,
 } from "../schemas";
@@ -19,6 +23,7 @@ export function registerMessageHandlers(
   io: RealtimeServer,
   socket: RealtimeSocket,
   clients: RealtimeClients,
+  presenceManager: PresenceManager,
 ): void {
   const messageService = new MessageService(clients.db, clients.redis);
 
@@ -73,6 +78,15 @@ export function registerMessageHandlers(
           mapMessage(result.value.message),
         );
       }
+      void presenceManager
+        .removeTypingForSocket(io, socket, input.data.roomId)
+        .catch((typingError: unknown) => {
+          console.error("Failed to clear typing after message send", {
+            error: typingError,
+            roomId: input.data.roomId,
+            socketId: socket.id,
+          });
+        });
       if (!wasJoined) {
         joinSocketRoom(socket, input.data.roomId);
       }
@@ -88,6 +102,87 @@ export function registerMessageHandlers(
       console.error("message:send failed", error);
       respondOrEmit<MessageSendResponse>(socket, callback, {
         error: "Failed to send message.",
+        success: false,
+      });
+    }
+  });
+
+  socket.on("message:delete", async (payload, callback) => {
+    try {
+      const input = messageDeletePayloadSchema.safeParse(payload);
+      if (!input.success) {
+        respondOrEmit<MessageDeleteResponse>(socket, callback, {
+          error: "Invalid delete payload.",
+          success: false,
+        });
+        return;
+      }
+
+      if (!socket.data.rooms.has(input.data.roomId)) {
+        respondOrEmit<MessageDeleteResponse>(socket, callback, {
+          error: "Not in room.",
+          success: false,
+        });
+        return;
+      }
+      if (socket.data.readOnly) {
+        respondOrEmit<MessageDeleteResponse>(
+          socket,
+          callback,
+          {
+            error: "Read-only sessions cannot delete messages.",
+            success: false,
+          },
+          "READ_ONLY",
+        );
+        return;
+      }
+
+      const currentMessage = await messageService.getMessageById(
+        input.data.messageId,
+        socket.data.userId,
+      );
+      if (
+        !currentMessage.ok ||
+        currentMessage.value.roomId !== input.data.roomId ||
+        currentMessage.value.status !== "visible"
+      ) {
+        respondOrEmit<MessageDeleteResponse>(socket, callback, {
+          error: "Message not found.",
+          success: false,
+        });
+        return;
+      }
+
+      const result = await messageService.deleteOwnMessage(
+        input.data.messageId,
+        socket.data.userId,
+        socket.data.sessionId,
+      );
+      if (!result.ok) {
+        respondOrEmit<MessageDeleteResponse>(socket, callback, {
+          error: result.error.message,
+          success: false,
+        });
+        return;
+      }
+
+      const update: MessageDeletedPayload = {
+        messageId: input.data.messageId,
+        roomId: input.data.roomId,
+        userId: socket.data.userId,
+      };
+      io.to(input.data.roomId).emit("message:deleted", update);
+
+      respondOrEmit<MessageDeleteResponse>(socket, callback, {
+        messageId: input.data.messageId,
+        roomId: input.data.roomId,
+        success: true,
+      });
+    } catch (error) {
+      console.error("message:delete failed", error);
+      respondOrEmit<MessageDeleteResponse>(socket, callback, {
+        error: "Failed to delete message.",
         success: false,
       });
     }

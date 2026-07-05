@@ -22,4 +22,9 @@ export const messageReactionPayloadSchema = z.object({
   roomId: uuidSchema,
 });
 
+export const messageDeletePayloadSchema = z.object({
+  messageId: uuidSchema,
+  roomId: uuidSchema,
+});
+
 export const typingPayloadSchema = roomPayloadSchema;

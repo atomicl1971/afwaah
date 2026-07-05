@@ -13,7 +13,7 @@ export function registerAllHandlers(
   presenceManager: PresenceManager,
 ): void {
   registerRoomHandlers(io, socket, clients, presenceManager);
-  registerMessageHandlers(io, socket, clients);
+  registerMessageHandlers(io, socket, clients, presenceManager);
   registerProfileHandlers(io, socket, clients, presenceManager);
   registerTypingHandlers(io, socket, clients, presenceManager);
 }

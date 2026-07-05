@@ -148,6 +148,30 @@
   background-color: var(--color-surface-2);
 }
 
+.chat-page-viewport {
+  height: 100vh;
+  height: 100svh;
+}
+
+.chat-viewport {
+  height: calc(100vh - 3.5rem);
+  height: calc(100svh - 3.5rem);
+}
+
+@supports (height: 100dvh) {
+  .chat-page-viewport {
+    height: 100dvh;
+  }
+
+  .chat-viewport {
+    height: calc(100dvh - 3.5rem);
+  }
+}
+
+.chat-composer {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
 /* Message arrival */
 @keyframes msg-in {
   from {

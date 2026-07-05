@@ -10,6 +10,7 @@ import { env } from "../env";
 import { mockGenerateMessage } from "../mocks/data";
 import type {
   Message,
+  MessageDeletedUpdate,
   MessageReactionUpdate,
   Presence,
   TypingUser,
@@ -17,11 +18,16 @@ import type {
 
 type Listener<T> = (payload: T) => void;
 
+const TYPING_START_REFRESH_MS = 4_000;
+const TYPING_STOP_IDLE_MS = 1_800;
+
 export interface RoomChannel {
   onMessage: (fn: Listener<Message>) => () => void;
+  onMessageDeleted: (fn: Listener<MessageDeletedUpdate>) => () => void;
   onReaction: (fn: Listener<MessageReactionUpdate>) => () => void;
   onTyping: (fn: Listener<TypingUser[]>) => () => void;
   onPresence: (fn: Listener<Presence[]>) => () => void;
+  deleteMessage: (messageId: string) => Promise<void>;
   react: (messageId: string, emoji: string, remove?: boolean) => Promise<void>;
   sendMessage: (content: string) => Promise<{
     clientMessageId: string;
@@ -97,6 +103,7 @@ export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
   const s = ensureSocket(opts);
 
   const messageListeners = new Set<Listener<Message>>();
+  const messageDeletedListeners = new Set<Listener<MessageDeletedUpdate>>();
   const reactionListeners = new Set<Listener<MessageReactionUpdate>>();
   const typingListeners = new Set<Listener<TypingUser[]>>();
   const presenceListeners = new Set<Listener<Presence[]>>();
@@ -108,8 +115,22 @@ export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
   let mockInterval: ReturnType<typeof setInterval> | null = null;
   let mockTypingTimer: ReturnType<typeof setTimeout> | null = null;
   let typingStopTimer: ReturnType<typeof setTimeout> | null = null;
+  let typingActive = false;
+  let lastTypingStartAt = 0;
 
   if (s) {
+    const emitTypingStop = () => {
+      if (typingStopTimer) {
+        clearTimeout(typingStopTimer);
+        typingStopTimer = null;
+      }
+      if (!typingActive) return;
+
+      typingActive = false;
+      lastTypingStartAt = 0;
+      s.emit("typing:stop", { roomId });
+    };
+
     s.emit("room:join", { roomId });
     const onMsg = (payload: {
       body: string;
@@ -169,13 +190,20 @@ export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
       if (payload.roomId !== roomId) return;
       reactionListeners.forEach((listener) => listener(payload));
     };
+    const onMessageDeleted = (payload: MessageDeletedUpdate) => {
+      if (payload.roomId !== roomId) return;
+      messageDeletedListeners.forEach((listener) => listener(payload));
+    };
     s.on("message:new", onMsg);
+    s.on("message:deleted", onMessageDeleted);
     s.on("message:reaction:update", onReaction);
     s.on("typing:update", onTyping);
     s.on("presence:update", onPresence);
 
     return {
       onMessage: (fn) => (messageListeners.add(fn), () => messageListeners.delete(fn)),
+      onMessageDeleted: (fn) =>
+        (messageDeletedListeners.add(fn), () => messageDeletedListeners.delete(fn)),
       onReaction: (fn) =>
         (reactionListeners.add(fn), () => reactionListeners.delete(fn)),
       onTyping: (fn) => (typingListeners.add(fn), () => typingListeners.delete(fn)),
@@ -194,7 +222,22 @@ export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
             },
           );
         }),
+      deleteMessage: (messageId) =>
+        new Promise((resolve, reject) => {
+          s.emit(
+            "message:delete",
+            { messageId, roomId },
+            (response: { error?: string; success: boolean }) => {
+              if (!response.success) {
+                reject(new Error(response.error ?? "Failed to delete message."));
+                return;
+              }
+              resolve();
+            },
+          );
+        }),
       sendMessage: (content) => {
+        emitTypingStop();
         const clientMessageId = createClientMessageId();
         pendingMessages.set(clientMessageId, {
           content,
@@ -235,16 +278,28 @@ export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
         });
       },
       sendTyping: () => {
-        s.emit("typing:start", { roomId });
+        const now = Date.now();
+        if (
+          !typingActive ||
+          now - lastTypingStartAt >= TYPING_START_REFRESH_MS
+        ) {
+          const isRefresh = typingActive;
+          typingActive = true;
+          lastTypingStartAt = now;
+          if (isRefresh) s.volatile.emit("typing:start", { roomId });
+          else s.emit("typing:start", { roomId });
+        }
+
         if (typingStopTimer) clearTimeout(typingStopTimer);
         typingStopTimer = setTimeout(() => {
-          s.emit("typing:stop", { roomId });
-        }, 1800);
+          emitTypingStop();
+        }, TYPING_STOP_IDLE_MS);
       },
       leave: () => {
+        emitTypingStop();
         s.emit("room:leave", { roomId });
-        if (typingStopTimer) clearTimeout(typingStopTimer);
         s.off("message:new", onMsg);
+        s.off("message:deleted", onMessageDeleted);
         s.off("message:reaction:update", onReaction);
         s.off("typing:update", onTyping);
         s.off("presence:update", onPresence);
@@ -281,12 +336,24 @@ export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
 
   return {
     onMessage: (fn) => (messageListeners.add(fn), () => messageListeners.delete(fn)),
+    onMessageDeleted: (fn) =>
+      (messageDeletedListeners.add(fn), () => messageDeletedListeners.delete(fn)),
     onReaction: (fn) =>
       (reactionListeners.add(fn), () => reactionListeners.delete(fn)),
     onTyping: (fn) => (typingListeners.add(fn), () => typingListeners.delete(fn)),
     onPresence: (fn) => (presenceListeners.add(fn), () => presenceListeners.delete(fn)),
     react: async () => {
       await new Promise((resolve) => setTimeout(resolve, 120));
+    },
+    deleteMessage: async (messageId) => {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      messageDeletedListeners.forEach((listener) =>
+        listener({
+          messageId,
+          roomId,
+          userId: opts.userId ?? "me",
+        }),
+      );
     },
     sendMessage: async (content) => ({
       clientMessageId: createClientMessageId(),
@@ -298,6 +365,7 @@ export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
       if (mockInterval) clearInterval(mockInterval);
       if (mockTypingTimer) clearTimeout(mockTypingTimer);
       messageListeners.clear();
+      messageDeletedListeners.clear();
       typingListeners.clear();
       presenceListeners.clear();
     },

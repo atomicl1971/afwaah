@@ -28,7 +28,7 @@ export function MessageList({
 
   if (loading) {
     return (
-      <div className="flex-1 space-y-3 px-4 py-4">
+      <div className="min-h-0 flex-1 space-y-3 px-4 py-4">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="flex gap-3">
             <div className="h-6 w-6 flex-shrink-0 animate-pulse rounded-full bg-muted" />
@@ -44,7 +44,7 @@ export function MessageList({
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-1 px-4 py-16 text-center">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 py-16 text-center">
         <p className="text-sm text-foreground">No messages yet</p>
         <p className="text-xs text-muted-foreground">Be the first to say something.</p>
       </div>
@@ -52,7 +52,7 @@ export function MessageList({
   }
 
   return (
-    <div ref={ref} className="flex-1 overflow-y-auto py-2">
+    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto py-2">
       {messages.map((m, i) => {
         const prev = messages[i - 1];
         const isMine = m.userId === currentUserId;
@@ -73,4 +73,3 @@ export function MessageList({
     </div>
   );
 }
-

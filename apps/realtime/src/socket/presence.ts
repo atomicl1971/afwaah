@@ -127,6 +127,15 @@ export class PresenceManager {
     });
   }
 
+  async removeTypingForSocket(
+    io: RealtimeServer,
+    socket: RealtimeSocket,
+    roomId: string,
+  ): Promise<void> {
+    await this.roomService.removeTyping(roomId, socket.data.sessionId);
+    await this.broadcastTyping(io, roomId);
+  }
+
   async refreshSocketPresence(socket: RealtimeSocket): Promise<void> {
     await Promise.all(
       Array.from(socket.data.rooms).map((roomId) =>

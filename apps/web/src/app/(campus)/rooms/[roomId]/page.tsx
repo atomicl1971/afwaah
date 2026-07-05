@@ -104,9 +104,9 @@ export default function RoomPage() {
   if (!session) return null;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="chat-page-viewport overflow-hidden bg-background">
       <TopBar session={session} />
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto min-h-0 max-w-3xl">
         <ChatRoom room={room} session={session} />
       </div>
     </div>

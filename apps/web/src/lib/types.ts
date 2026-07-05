@@ -75,6 +75,12 @@ export interface MessageReactionUpdate {
   userId: string;
 }
 
+export interface MessageDeletedUpdate {
+  messageId: string;
+  roomId: string;
+  userId: string;
+}
+
 export interface Presence {
   userId: string;
   displayName: string;

@@ -244,6 +244,7 @@ export class MessageService {
     if (!interactionAccess.ok) return err(interactionAccess.error);
 
     await this.messageRepo.updateStatus(messageId, "deleted");
+    await this.roomCache.clearRecentMessages(message.roomId);
     return ok(undefined);
   }
 

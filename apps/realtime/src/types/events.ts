@@ -9,6 +9,10 @@ export interface ClientToServerEvents {
     payload: MessageReactionPayload,
     callback?: (response: MessageReactionResponse) => void,
   ) => void;
+  "message:delete": (
+    payload: MessageDeletePayload,
+    callback?: (response: MessageDeleteResponse) => void,
+  ) => void;
   "profile:refresh": (
     callback?: (response: ProfileRefreshResponse) => void,
   ) => void;
@@ -26,6 +30,7 @@ export interface ClientToServerEvents {
 
 export interface ServerToClientEvents {
   error: (payload: ErrorPayload) => void;
+  "message:deleted": (payload: MessageDeletedPayload) => void;
   "message:new": (payload: MessageNewPayload) => void;
   "message:reaction:update": (payload: MessageReactionUpdatePayload) => void;
   "presence:update": (payload: PresenceUpdatePayload) => void;
@@ -109,6 +114,24 @@ export interface MessageReactionResponse {
   reactionCounts?: Record<string, number>;
   roomId?: string;
   success: boolean;
+}
+
+export interface MessageDeletePayload {
+  messageId: string;
+  roomId: string;
+}
+
+export interface MessageDeleteResponse {
+  error?: string;
+  messageId?: string;
+  roomId?: string;
+  success: boolean;
+}
+
+export interface MessageDeletedPayload {
+  messageId: string;
+  roomId: string;
+  userId: string;
 }
 
 export interface MessageReactionUpdatePayload {

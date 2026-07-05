@@ -88,14 +88,18 @@ export function ChatRoom({
       userId: session.userId,
     });
     channelRef.current = ch;
-    const u1 = ch.onMessage((m) =>
+    const u1 = ch.onMessage((m) => {
+      setTyping((prev) => prev.filter((t) => t.userId !== m.userId));
       setMessages((prev) =>
         prev.some((existing) => existing.id === m.id) ? prev : [...prev, m],
-      ),
-    );
-    const u2 = ch.onTyping((list) =>
-      setTyping(list.filter((t) => t.userId !== session.userId)),
-    );
+      );
+    });
+    const u2 = ch.onTyping((list) => {
+      const nextTyping = list.filter((t) => t.userId !== session.userId);
+      setTyping((prev) =>
+        sameTypingUsers(prev, nextTyping) ? prev : nextTyping,
+      );
+    });
     const u3 = ch.onPresence((list) => setPresence(list));
     const u4 = ch.onReaction((update) =>
       setMessages((prev) =>
@@ -116,12 +120,22 @@ export function ChatRoom({
         }),
       ),
     );
+    const u5 = ch.onMessageDeleted((update) =>
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === update.messageId
+            ? { ...message, deleted: true, content: "" }
+            : message,
+        ),
+      ),
+    );
     return () => {
       active = false;
       u1();
       u2();
       u3();
       u4();
+      u5();
       ch.leave();
     };
   }, [
@@ -312,9 +326,22 @@ export function ChatRoom({
     }
   };
 
+  const deleteMessage = async (messageId: string) => {
+    if (roomExpired) {
+      throw new Error("This room has expired.");
+    }
+
+    if (channelRef.current) {
+      await channelRef.current.deleteMessage(messageId);
+      return;
+    }
+
+    await api.messages.remove(messageId);
+  };
+
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <header className="flex items-center gap-3 border-b border-border bg-background px-4 py-2.5">
+    <div className="chat-viewport flex min-h-0 flex-col overflow-hidden">
+      <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background px-4 py-2.5">
         <Link
           href="/rooms"
           aria-label="Back"
@@ -358,13 +385,13 @@ export function ChatRoom({
       </header>
 
       {(session.ban || session.writeAccess.kind !== "allowed") && (
-        <div className="border-b border-border px-4 py-2.5">
+        <div className="shrink-0 border-b border-border px-4 py-2.5">
           <AccessStateBanner ban={session.ban} write={session.writeAccess} />
         </div>
       )}
 
       {(expiresSoon || roomExpired) && (
-        <div className="border-b border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">
+        <div className="shrink-0 border-b border-amber-400/20 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-200">
           <div className="mx-auto flex max-w-5xl items-center gap-2">
             {roomExpired ? (
               <AlertTriangle className="h-4 w-4" />
@@ -389,7 +416,7 @@ export function ChatRoom({
         onReact={handleReact}
       />
 
-      <div className="px-4 pb-1">
+      <div className="shrink-0 px-4 pb-1">
         <TypingIndicator users={typing} />
       </div>
 
@@ -439,6 +466,7 @@ export function ChatRoom({
         open={!!deleteTarget}
         message={deleteTarget}
         onClose={() => setDeleteTarget(null)}
+        onDelete={deleteMessage}
         onDeleted={(id) =>
           setMessages((prev) =>
             prev.map((m) =>
@@ -458,6 +486,16 @@ export function ChatRoom({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to send message.";
+}
+
+function sameTypingUsers(a: TypingUser[], b: TypingUser[]): boolean {
+  if (a.length !== b.length) return false;
+  const users = new Set(
+    a.map((user) => `${user.userId ?? ""}:${user.displayName}`),
+  );
+  return b.every((user) =>
+    users.has(`${user.userId ?? ""}:${user.displayName}`),
+  );
 }
 
 function createOptimisticMessageId(): string {

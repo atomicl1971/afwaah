@@ -9,11 +9,13 @@ export function DeleteMessageDialog({
   open,
   message,
   onClose,
+  onDelete,
   onDeleted,
 }: {
   open: boolean;
   message: Message | null;
   onClose: () => void;
+  onDelete?: (id: string) => Promise<void>;
   onDeleted: (id: string) => void;
 }) {
   const [state, setState] = useState<State>("idle");
@@ -32,7 +34,7 @@ export function DeleteMessageDialog({
     setState("loading");
     setError(null);
     try {
-      await api.messages.remove(message.id);
+      await (onDelete ?? api.messages.remove)(message.id);
       setState("success");
       onDeleted(message.id);
       setTimeout(() => onClose(), 600);
