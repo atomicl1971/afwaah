@@ -151,25 +151,45 @@
 .chat-page-viewport {
   height: 100vh;
   height: 100svh;
+  height: var(--chat-visual-height, 100svh);
 }
 
 .chat-viewport {
   height: calc(100vh - 3.5rem);
   height: calc(100svh - 3.5rem);
+  height: calc(var(--chat-visual-height, 100svh) - 3.5rem);
 }
 
 @supports (height: 100dvh) {
   .chat-page-viewport {
     height: 100dvh;
+    height: var(--chat-visual-height, 100dvh);
   }
 
   .chat-viewport {
     height: calc(100dvh - 3.5rem);
+    height: calc(var(--chat-visual-height, 100dvh) - 3.5rem);
   }
 }
 
 .chat-composer {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.chat-scroll-lock {
+  overscroll-behavior: none;
+}
+
+html.chat-scroll-lock,
+body.chat-scroll-lock {
+  height: var(--chat-visual-height, 100dvh);
+  overflow: hidden;
+}
+
+body.chat-scroll-lock {
+  inset: 0;
+  position: fixed;
+  width: 100%;
 }
 
 /* Message arrival */

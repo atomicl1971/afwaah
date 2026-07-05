@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ChatViewportController } from "@/components/ChatViewportController";
 import { ChatRoom } from "@/components/ChatRoom";
 import { TopBar } from "@/components/TopBar";
 import { useSession } from "@/hooks/useSession";
@@ -105,6 +106,7 @@ export default function RoomPage() {
 
   return (
     <div className="chat-page-viewport overflow-hidden bg-background">
+      <ChatViewportController />
       <TopBar session={session} />
       <div className="mx-auto min-h-0 max-w-3xl">
         <ChatRoom room={room} session={session} />

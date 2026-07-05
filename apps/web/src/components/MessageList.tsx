@@ -52,24 +52,26 @@ export function MessageList({
   }
 
   return (
-    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto py-2">
-      {messages.map((m, i) => {
-        const prev = messages[i - 1];
-        const isMine = m.userId === currentUserId;
-        const sameAuthor = prev?.userId === m.userId;
-        return (
-          <MessageItem
-            key={m.id}
-            message={m}
-            isMine={isMine}
-            sameAuthor={sameAuthor}
-            onReport={onReport}
-            onDelete={onDelete}
-            onReact={onReact}
-          />
-        );
+    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2">
+      <div className="flex min-h-full flex-col justify-end">
+        {messages.map((m, i) => {
+          const prev = messages[i - 1];
+          const isMine = m.userId === currentUserId;
+          const sameAuthor = prev?.userId === m.userId;
+          return (
+            <MessageItem
+              key={m.id}
+              message={m}
+              isMine={isMine}
+              sameAuthor={sameAuthor}
+              onReport={onReport}
+              onDelete={onDelete}
+              onReact={onReact}
+            />
+          );
 
-      })}
+        })}
+      </div>
     </div>
   );
 }
