@@ -9,6 +9,9 @@ export interface ClientToServerEvents {
     payload: MessageReactionPayload,
     callback?: (response: MessageReactionResponse) => void,
   ) => void;
+  "profile:refresh": (
+    callback?: (response: ProfileRefreshResponse) => void,
+  ) => void;
   "room:join": (
     payload: RoomJoinPayload,
     callback?: (response: RoomJoinResponse) => void,
@@ -42,6 +45,7 @@ export interface SocketData {
   readOnly: boolean;
   rooms: Set<string>;
   sessionId: string;
+  tokenHashHex: string;
   userId: string;
 }
 
@@ -145,6 +149,13 @@ export interface PresenceUpdatePayload {
   count: number;
   roomId: string;
   users: Array<{ displayColor: string; displayName: string; userId: string }>;
+}
+
+export interface ProfileRefreshResponse {
+  displayColor?: string;
+  displayName?: string;
+  error?: string;
+  success: boolean;
 }
 
 export interface ErrorPayload {

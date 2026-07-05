@@ -24,12 +24,22 @@ export class PresenceManager {
   ): Promise<void> {
     socket.data.rooms.add(roomId);
     await socket.join(roomId);
-    await this.roomService.setPresence(
-      roomId,
-      socket.data.sessionId,
-      socket.id,
-    );
-    await this.broadcastPresence(io, roomId);
+    void this.roomService
+      .setPresence(roomId, socket.data.sessionId, socket.id)
+      .catch((error) => {
+        console.error("Presence add failed", {
+          error,
+          roomId,
+          socketId: socket.id,
+        });
+      });
+    void this.broadcastPresence(io, roomId).catch((error) => {
+      console.error("Presence broadcast failed", {
+        error,
+        roomId,
+        socketId: socket.id,
+      });
+    });
   }
 
   async removeFromRoom(

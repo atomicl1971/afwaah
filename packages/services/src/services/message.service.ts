@@ -280,24 +280,30 @@ export class MessageService {
       );
     }
 
-    const room = await this.roomRepo.findById(input.roomId);
-    stageStartedAt = markTiming(timings, "room_lookup", stageStartedAt);
-    if (!room) return err(createError("ROOM_NOT_FOUND", "Room not found."));
-    if (room.status !== "active")
+    const access = await this.messageRepo.getSendAccessSnapshot(
+      input.roomId,
+      userId,
+      sessionId,
+      input.clientMessageId,
+    );
+    stageStartedAt = markTiming(
+      timings,
+      "access_snapshot",
+      stageStartedAt,
+    );
+    if (!access) return err(createError("ROOM_NOT_FOUND", "Room not found."));
+    if (access.roomStatus !== "active")
       return err(createError("ROOM_LOCKED", "Room is not active."));
-    if (room.expiresAt && room.expiresAt <= new Date()) {
+    if (access.roomExpiresAt && access.roomExpiresAt <= new Date()) {
       return err(createError("ROOM_EXPIRED", "Room has expired."));
     }
 
-    const existing = await this.messageRepo.findByClientMessageId(
-      input.roomId,
-      input.clientMessageId,
-    );
-    stageStartedAt = markTiming(timings, "dedupe_lookup", stageStartedAt);
-    if (existing) {
+    if (access.existingMessageId) {
       if (
-        existing.anonymousUserId !== userId ||
-        existing.sessionId !== sessionId
+        access.existingAnonymousUserId !== userId ||
+        access.existingSessionId !== sessionId ||
+        !access.existingClientMessageId ||
+        !access.existingCreatedAt
       ) {
         return err(
           createError("VALIDATION_ERROR", "clientMessageId is already used."),
@@ -305,21 +311,31 @@ export class MessageService {
       }
 
       return ok({
-        clientMessageId: existing.clientMessageId,
-        createdAt: existing.createdAt,
-        messageId: existing.id,
+        clientMessageId: access.existingClientMessageId,
+        createdAt: access.existingCreatedAt,
+        messageId: access.existingMessageId,
         wasCreated: false,
       });
     }
 
-    const writeAccess = await this.writeGuard.requireWriteAccess({
-      roomAlreadyValidated: true,
-      roomId: input.roomId,
-      sessionId,
-      userId,
-    });
-    stageStartedAt = markTiming(timings, "write_guard", stageStartedAt);
-    if (!writeAccess.ok) return err(writeAccess.error);
+    if (access.banType && access.banType !== "room_ban") {
+      return err(
+        createError("BAN_ACTIVE", "User is banned from interacting.", {
+          banType: access.banType,
+        }),
+      );
+    }
+    if (access.banType === "room_ban") {
+      return err(createError("ROOM_BANNED", "User is banned from this room."));
+    }
+    if (!access.locationValid) {
+      return err(
+        createError(
+          "LOCATION_OUTSIDE_GEOFENCE",
+          "A valid campus location check is required before writing.",
+        ),
+      );
+    }
 
     const rateLimit = await this.enforceMessageRateLimits(
       userId,
@@ -329,12 +345,7 @@ export class MessageService {
     stageStartedAt = markTiming(timings, "rate_limits", stageStartedAt);
     if (!rateLimit.ok) return err(rateLimit.error);
 
-    const participant = await this.roomRepo.getParticipant(
-      input.roomId,
-      userId,
-    );
-    stageStartedAt = markTiming(timings, "participant_lookup", stageStartedAt);
-    if (!participant || participant.status !== "active") {
+    if (access.participantStatus !== "active") {
       return err(
         createError("NOT_ROOM_PARTICIPANT", "Not a room participant."),
       );
@@ -364,14 +375,34 @@ export class MessageService {
     );
     stageStartedAt = markTiming(timings, "message_insert", stageStartedAt);
     const mappedMessage = mapMessage(message);
-    await Promise.all([
-      this.roomRepo.updateParticipantLastMessage(input.roomId, userId),
-      this.roomCache.pushRecentMessage(
-        input.roomId,
-        JSON.stringify(mappedMessage),
-      ),
-    ]);
-    markTiming(timings, "post_insert_updates", stageStartedAt);
+    void this.roomRepo
+      .updateParticipantLastMessage(input.roomId, userId)
+      .catch((error) => {
+        console.error("Participant last-message update failed", {
+          error,
+          messageId: message.id,
+          roomId: input.roomId,
+        });
+      });
+    void this.roomCache
+      .pushRecentMessage(input.roomId, JSON.stringify(mappedMessage))
+      .catch((error) => {
+        console.error("Recent message cache push failed", {
+          error,
+          messageId: message.id,
+          roomId: input.roomId,
+        });
+        void this.roomCache.clearRecentMessages(input.roomId).catch(
+          (clearError) => {
+            console.error("Recent message cache invalidation failed", {
+              error: clearError,
+              messageId: message.id,
+              roomId: input.roomId,
+            });
+          },
+        );
+      });
+    markTiming(timings, "post_insert_scheduled", stageStartedAt);
     logSlowMessageSend(input.roomId, message.id, sendStartedAt, timings);
 
     return ok({
@@ -388,11 +419,41 @@ export class MessageService {
     roomId: string,
     body: string,
   ): Promise<Result<void>> {
-    const global = await this.rateLimitCache.checkWithBurst(
-      "message_send",
-      userId,
-      MESSAGE_GLOBAL_LIMIT,
-    );
+    const normalizedBody = normalizeMessageBody(body);
+    const includeShortTextLimit =
+      normalizedBody.length <= SHORT_TEXT_MAX_LENGTH;
+    const checks = [
+      {
+        action: "message_send" as const,
+        config: MESSAGE_GLOBAL_LIMIT,
+        subjectId: userId,
+      },
+      {
+        action: "message_burst" as const,
+        config: MESSAGE_ROOM_LIMIT,
+        subjectId: `${userId}:${roomId}`,
+      },
+      ...(includeShortTextLimit
+        ? [
+            {
+              action: "message_burst" as const,
+              config: MESSAGE_SHORT_TEXT_LIMIT,
+              subjectId: `${userId}:${roomId}:short`,
+            },
+          ]
+        : []),
+      {
+        action: "message_burst" as const,
+        config: MESSAGE_DUPLICATE_LIMIT,
+        subjectId: `${userId}:${roomId}:same:${hashMessageBody(normalizedBody)}`,
+      },
+    ];
+    const results = await this.rateLimitCache.checkMany(checks);
+    const global = results[0]!;
+    const room = results[1]!;
+    const shortText = includeShortTextLimit ? results[2] : null;
+    const duplicate = results[includeShortTextLimit ? 3 : 2]!;
+
     if (!global.allowed) {
       return rateLimited(
         "You're sending messages too quickly.",
@@ -401,11 +462,6 @@ export class MessageService {
       );
     }
 
-    const room = await this.rateLimitCache.checkWithBurst(
-      "message_burst",
-      `${userId}:${roomId}`,
-      MESSAGE_ROOM_LIMIT,
-    );
     if (!room.allowed) {
       return rateLimited(
         "Slow down in this room.",
@@ -414,27 +470,14 @@ export class MessageService {
       );
     }
 
-    const normalizedBody = normalizeMessageBody(body);
-    if (normalizedBody.length <= SHORT_TEXT_MAX_LENGTH) {
-      const shortText = await this.rateLimitCache.checkAndIncrement(
-        "message_burst",
-        `${userId}:${roomId}:short`,
-        MESSAGE_SHORT_TEXT_LIMIT,
+    if (shortText && !shortText.allowed) {
+      return rateLimited(
+        "Too many short messages.",
+        shortText.retryAfterSeconds,
+        "short_text",
       );
-      if (!shortText.allowed) {
-        return rateLimited(
-          "Too many short messages.",
-          shortText.retryAfterSeconds,
-          "short_text",
-        );
-      }
     }
 
-    const duplicate = await this.rateLimitCache.checkAndIncrement(
-      "message_burst",
-      `${userId}:${roomId}:same:${hashMessageBody(normalizedBody)}`,
-      MESSAGE_DUPLICATE_LIMIT,
-    );
     if (!duplicate.allowed) {
       return rateLimited(
         "Repeated message blocked.",

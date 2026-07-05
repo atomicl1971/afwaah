@@ -33,13 +33,7 @@ export function registerMessageHandlers(
         return;
       }
 
-      if (!socket.data.rooms.has(input.data.roomId)) {
-        respondOrEmit<MessageSendResponse>(socket, callback, {
-          error: "Not in room.",
-          success: false,
-        });
-        return;
-      }
+      const wasJoined = socket.data.rooms.has(input.data.roomId);
       if (socket.data.readOnly) {
         respondOrEmit<MessageSendResponse>(
           socket,
@@ -78,6 +72,9 @@ export function registerMessageHandlers(
           "message:new",
           mapMessage(result.value.message),
         );
+      }
+      if (!wasJoined) {
+        joinSocketRoom(socket, input.data.roomId);
       }
 
       respondOrEmit<MessageSendResponse>(socket, callback, {
@@ -221,4 +218,16 @@ function mapMessage(message: MessageData): MessageNewPayload {
     roomId: message.roomId,
     userId: message.userId,
   };
+}
+
+function joinSocketRoom(socket: RealtimeSocket, roomId: string): void {
+  socket.data.rooms.add(roomId);
+  void Promise.resolve(socket.join(roomId)).catch((error: unknown) => {
+    socket.data.rooms.delete(roomId);
+    console.error("Failed to join socket room after send", {
+      error,
+      roomId,
+      socketId: socket.id,
+    });
+  });
 }

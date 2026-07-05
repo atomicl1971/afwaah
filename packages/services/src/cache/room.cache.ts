@@ -78,6 +78,10 @@ export class RoomCache {
     );
   }
 
+  async clearRecentMessages(roomId: string): Promise<void> {
+    await this.redis.del(redisKeys.recentRoomMessages(roomId));
+  }
+
   async pushRecentMessage(
     roomId: string,
     serializedMessage: string,

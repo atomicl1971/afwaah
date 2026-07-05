@@ -12,7 +12,10 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useSession } from "@/hooks/useSession";
 import { api } from "@/lib/api/client";
 import { randomDisplayName } from "@/lib/constants";
-import { resetRealtimeConnection } from "@/lib/realtime/client";
+import {
+  refreshRealtimeProfile,
+  resetRealtimeConnection,
+} from "@/lib/realtime/client";
 
 export default function ProfilePage() {
   const { session, update } = useSession();
@@ -40,8 +43,8 @@ export default function ProfilePage() {
     setSaving(true);
     try {
       await api.session.updateProfile({ displayName: nextName });
-      resetRealtimeConnection();
       update({ displayName: nextName });
+      await syncRealtimeProfile();
       setName(nextName);
       toast.success("Profile updated");
     } catch (error) {
@@ -57,7 +60,7 @@ export default function ProfilePage() {
     update({ displayColor: c });
     try {
       await api.session.updateProfile({ displayColor: c });
-      resetRealtimeConnection();
+      await syncRealtimeProfile();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Color update failed");
     }
@@ -157,4 +160,9 @@ export default function ProfilePage() {
       </div>
     </AppShell>
   );
+}
+
+async function syncRealtimeProfile(): Promise<void> {
+  const refreshed = await refreshRealtimeProfile();
+  if (!refreshed) resetRealtimeConnection();
 }

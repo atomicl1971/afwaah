@@ -9,6 +9,21 @@ import type {
 } from "../types";
 import { BaseRepository, type DrizzleClient } from "./base";
 
+export interface MessageSendAccessSnapshot {
+  banType: string | null;
+  existingAnonymousUserId: string | null;
+  existingClientMessageId: string | null;
+  existingCreatedAt: Date | null;
+  existingMessageId: string | null;
+  existingSessionId: string | null;
+  locationValid: boolean;
+  participantId: string | null;
+  participantStatus: string | null;
+  roomExpiresAt: Date | null;
+  roomId: string;
+  roomStatus: string;
+}
+
 export class MessageRepository extends BaseRepository {
   constructor(db: DrizzleClient) {
     super(db);
@@ -145,6 +160,89 @@ export class MessageRepository extends BaseRepository {
       .orderBy(messageReactions.createdAt);
   }
 
+  async getSendAccessSnapshot(
+    roomId: string,
+    userId: string,
+    sessionId: string,
+    clientMessageId: string,
+  ): Promise<MessageSendAccessSnapshot | null> {
+    const result = await this.db.execute(sql`
+      SELECT
+        room.id::text AS "roomId",
+        room.status AS "roomStatus",
+        room.expires_at AS "roomExpiresAt",
+        participant.id::text AS "participantId",
+        participant.status AS "participantStatus",
+        existing_message.id::text AS "existingMessageId",
+        existing_message.client_message_id::text AS "existingClientMessageId",
+        existing_message.anonymous_user_id::text AS "existingAnonymousUserId",
+        existing_message.session_id::text AS "existingSessionId",
+        existing_message.created_at AS "existingCreatedAt",
+        EXISTS (
+          SELECT 1
+          FROM core.location_checks AS location_check
+          WHERE location_check.session_id = ${sessionId}::uuid
+            AND location_check.is_within_geofence = TRUE
+            AND location_check.valid_until > NOW()
+          LIMIT 1
+        ) AS "locationValid",
+        (
+          SELECT ban.ban_type
+          FROM moderation.bans AS ban
+          WHERE ban.is_active = TRUE
+            AND (ban.expires_at IS NULL OR ban.expires_at > NOW())
+            AND (
+              ban.target_user_id = ${userId}::uuid
+              OR ban.target_session_id = ${sessionId}::uuid
+            )
+            AND (
+              ban.ban_type IN (
+                'global_hard_ban',
+                'global_write_ban',
+                'quarantine'
+              )
+              OR (
+                ban.ban_type = 'room_ban'
+                AND ban.target_room_id = ${roomId}::uuid
+              )
+            )
+          ORDER BY
+            CASE ban.ban_type
+              WHEN 'global_hard_ban' THEN 1
+              WHEN 'global_write_ban' THEN 2
+              WHEN 'quarantine' THEN 3
+              WHEN 'room_ban' THEN 4
+              ELSE 5
+            END,
+            ban.confidence_score DESC,
+            ban.created_at DESC
+          LIMIT 1
+        ) AS "banType"
+      FROM core.rooms AS room
+      LEFT JOIN core.room_participants AS participant
+        ON participant.room_id = room.id
+        AND participant.anonymous_user_id = ${userId}::uuid
+      LEFT JOIN LATERAL (
+        SELECT
+          message.id,
+          message.client_message_id,
+          message.anonymous_user_id,
+          message.session_id,
+          message.created_at
+        FROM core.messages AS message
+        WHERE message.room_id = room.id
+          AND message.client_message_id = ${clientMessageId}::uuid
+        ORDER BY message.created_at DESC
+        LIMIT 1
+      ) AS existing_message ON TRUE
+      WHERE room.id = ${roomId}::uuid
+      LIMIT 1
+    `);
+
+    const [snapshot] = rowsFromResult<MessageSendAccessSnapshot>(result);
+    return snapshot ?? null;
+  }
+
   async removeReaction(
     messageId: string,
     userId: string,
@@ -182,4 +280,13 @@ export class MessageRepository extends BaseRepository {
 
     return message ?? null;
   }
+}
+
+function rowsFromResult<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    return Array.isArray(rows) ? (rows as T[]) : [];
+  }
+  return [];
 }

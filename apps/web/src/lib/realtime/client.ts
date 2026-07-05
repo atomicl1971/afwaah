@@ -77,6 +77,22 @@ export function resetRealtimeConnection(): void {
   socketIdentityKey = null;
 }
 
+export function refreshRealtimeProfile(): Promise<boolean> {
+  const currentSocket = socket;
+  if (!currentSocket?.connected) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(false), 1500);
+    currentSocket.emit(
+      "profile:refresh",
+      (response: { success: boolean }) => {
+        window.clearTimeout(timer);
+        resolve(response.success);
+      },
+    );
+  });
+}
+
 export function joinRoom(roomId: string, opts: ConnectOpts): RoomChannel {
   const s = ensureSocket(opts);
 

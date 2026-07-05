@@ -1,6 +1,7 @@
 import type { RedisClient } from "@campus-chat/services/cache";
 import type { DrizzleClient } from "@campus-chat/services/repositories";
 import { SessionService } from "@campus-chat/services/services";
+import { hashToken } from "@campus-chat/services/utils";
 
 import type { RealtimeEnv } from "../env";
 import type { RealtimeSocket } from "../types/socket";
@@ -19,6 +20,7 @@ export function createAuthMiddleware(
         next(new Error("Authentication required."));
         return;
       }
+      const tokenHashHex = hashToken(token).toString("hex");
 
       const result = await sessionService.validateSession(token);
       if (!result.ok || !result.value.valid || !result.value.session) {
@@ -34,6 +36,7 @@ export function createAuthMiddleware(
         result.value.banInfo?.banType === "quarantine";
       socket.data.rooms = new Set();
       socket.data.sessionId = result.value.session.sessionId;
+      socket.data.tokenHashHex = tokenHashHex;
       socket.data.userId = result.value.session.userId;
 
       next();
