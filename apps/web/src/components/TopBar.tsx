@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FullscreenToggle } from "./FullscreenToggle";
 import { ThemeToggle } from "./ThemeToggle";
 import { User, MapPin } from "lucide-react";
 import type { AnonSession } from "@/lib/types";
@@ -39,6 +40,7 @@ export function TopBar({
             <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
             <span className="truncate">{locLabel}</span>
           </Link>
+          <FullscreenToggle />
           <ThemeToggle />
           <Link
             href="/me"
