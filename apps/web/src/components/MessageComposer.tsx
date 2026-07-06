@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Send } from "lucide-react";
 
 export function MessageComposer({
@@ -16,6 +16,7 @@ export function MessageComposer({
 }) {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const submit = async () => {
     const v = value.trim();
@@ -29,6 +30,8 @@ export function MessageComposer({
       // The caller owns user-facing error messages; keep the draft intact.
     } finally {
       setSending(false);
+      // Re-focus the textarea so the keyboard stays open on mobile
+      textareaRef.current?.focus();
     }
   };
 
@@ -53,6 +56,7 @@ export function MessageComposer({
     <div className="chat-composer shrink-0 border-t border-border bg-background px-3 pt-3">
       <div className="flex items-end gap-2 rounded-lg border border-border bg-card px-2 py-1.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
         <textarea
+          ref={textareaRef}
           value={value}
           onChange={(e) => {
             setValue(e.target.value);
@@ -65,6 +69,11 @@ export function MessageComposer({
         />
         <button
           type="button"
+          onMouseDown={(e) => {
+            // Prevent the button click from stealing focus away from the
+            // textarea — this keeps the mobile keyboard open after send.
+            e.preventDefault();
+          }}
           onClick={() => void submit()}
           disabled={!value.trim() || sending}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"

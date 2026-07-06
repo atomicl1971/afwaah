@@ -187,9 +187,8 @@ body.chat-scroll-lock {
 }
 
 body.chat-scroll-lock {
-  inset: 0;
-  position: fixed;
-  width: 100%;
+  overflow: clip;
+  overscroll-behavior: none;
 }
 
 /* Message arrival */
