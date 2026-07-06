@@ -148,6 +148,12 @@
   background-color: var(--color-surface-2);
 }
 
+/*
+ * Chat viewport height.
+ * Uses --chat-visual-height when ChatViewportController is mounted (mobile,
+ * accounts for on-screen keyboard). Falls back to 100dvh, then 100vh for
+ * older browsers. Subtracts the 3.5rem TopBar.
+ */
 .chat-page-viewport {
   height: 100vh;
   height: 100svh;
@@ -174,22 +180,6 @@
 
 .chat-composer {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-}
-
-.chat-scroll-lock {
-  overscroll-behavior: none;
-}
-
-html.chat-scroll-lock,
-body.chat-scroll-lock {
-  height: var(--chat-visual-height, 100dvh);
-  overflow: hidden;
-}
-
-body.chat-scroll-lock {
-  inset: 0;
-  position: fixed;
-  width: 100%;
 }
 
 /* Message arrival */
